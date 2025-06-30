@@ -37,7 +37,7 @@ def run_command(cmd):
 def get_video_info(url):
     """Get video metadata as JSON."""
     try:
-        cmd = f'yt-dlp -j "{url}"'
+        cmd = f'yt-dlp --cookies youtube.com_cookies.txt -j "{url}"'
         output = run_command(cmd)
         return json.loads(output) if output else {}
     except json.JSONDecodeError:
@@ -47,7 +47,7 @@ def get_video_info(url):
 
 def get_formats(url):
     """Get available formats list from yt-dlp."""
-    cmd = f'yt-dlp --list-formats "{url}"'
+    cmd = f'yt-dlp --cookies youtube.com_cookies.txt --list-formats "{url}"'
     return run_command(cmd)
 
 
@@ -177,16 +177,16 @@ def main():
     if platform == 'youtube' and video_id and audio_id:
         # YouTube with separate video and audio formats
         dl_cmd = (
-            f'yt-dlp -f {video_id}+{audio_id} --write-auto-sub --sub-lang "en.*" '
+            f'yt-dlp --cookies youtube.com_cookies.txt -f {video_id}+{audio_id} --write-auto-sub --sub-lang "en.*" '
             f'--convert-subs srt -P "{output_dir}" "{args.url}"'
         )
     elif platform == 'x' and video_id:
         # X (Twitter) with single format (no audio format needed)
-        dl_cmd = f'yt-dlp -f {video_id} -P "{output_dir}" "{args.url}"'
+        dl_cmd = f'yt-dlp --cookies youtube.com_cookies.txt -f {video_id} -P "{output_dir}" "{args.url}"'
     else:
         # Fallback for other platforms or when format selection fails
         # Let yt-dlp automatically select and merge the best available formats
-        dl_cmd = f'yt-dlp -P "{output_dir}" "{args.url}"'
+        dl_cmd = f'yt-dlp --cookies youtube.com_cookies.txt -P "{output_dir}" "{args.url}"'
         print("Using automatic format selection as fallback.")
     
     print(f"Running: {dl_cmd}")
