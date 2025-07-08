@@ -90,7 +90,8 @@ def main():
         description='Download videos from YouTube, X (Twitter), and other platforms'
     )
     parser.add_argument('url', help='URL to download (YouTube, X, etc.)')
-    args = parser.parse_args()
+    # Parse known and unknown args
+    args, extra_args = parser.parse_known_args()
     
     # Detect platform (optional, kept for possible future use)
     platform = detect_platform(args.url)
@@ -129,11 +130,13 @@ def main():
         'best[ext=mp4]/best'
     )
     
+    # Build the yt-dlp command, including any extra args
+    extra_args_str = ' '.join([f'"{arg}"' if ' ' in arg else arg for arg in extra_args])
     dl_cmd = (
         f'yt-dlp --cookies-from-browser firefox '
         f'-f "{format_selector}" '
         f'--write-auto-sub --sub-lang "en.*" --convert-subs srt '
-        f'-P "{output_dir}" "{args.url}"'
+        f'-P "{output_dir}" {extra_args_str} "{args.url}"'
     )
     
     print(f"Running: {dl_cmd}")
