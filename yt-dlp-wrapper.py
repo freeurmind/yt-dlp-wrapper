@@ -173,6 +173,7 @@ class VideoDownloader:
             '--write-auto-sub',
             '--sub-lang', 'en.*',
             '--convert-subs', 'srt',
+            '--ignore-errors',  # Continue on subtitle download errors
             '-P', str(output_dir),
             '--no-mtime',  # Don't set file modification time
             '--embed-metadata',  # Embed metadata in video file
