@@ -5,6 +5,7 @@ Vibe coding an optimized Python wrapper script for [yt-dlp](https://github.com/y
 ## Features
 
 - **Smart Format Selection**: Optimized format selector with resolution priority (4K > 2K > 1080p > 720p) and codec preference (av01 > vp9 > avc1)
+- **Premium Format Detection**: Automatically detects and uses YouTube Premium formats when available
 - **Multi-Browser Support**: Extract cookies from Firefox, Chrome, or Safari for authenticated downloads
 - **Robust Error Handling**: Comprehensive validation, timeout protection, and graceful failure handling
 - **Multi-Platform Support**: Works with YouTube, X (Twitter), and other platforms supported by yt-dlp
@@ -14,6 +15,7 @@ Vibe coding an optimized Python wrapper script for [yt-dlp](https://github.com/y
 - **Custom Format Support**: Override default format selection with custom selectors
 - **Dependency Validation**: Automatic checking of required tools and browsers
 - **Timeout Protection**: Prevents hanging on long operations
+- **YouTube SABR Support**: Handles YouTube's Server-side Adaptive Bitrate streaming protocol
 
 ## Format Selection Strategy
 
@@ -85,11 +87,30 @@ python yt-dlp-wrapper.py "URL" --verbose
 python yt-dlp-wrapper.py "URL" --browser chrome --format "best[height<=1080]" --verbose
 ```
 
+**Handle YouTube SABR streaming issues:**
+```sh
+python yt-dlp-wrapper.py "URL" --youtube-client android
+```
+
+**Enable SABR format support:**
+```sh
+python yt-dlp-wrapper.py "URL" --enable-sabr
+```
+
+**Disable Premium format detection:**
+```sh
+python yt-dlp-wrapper.py "URL" --no-premium
+```
+
 ### Command-Line Options
 
 - `--format, -f`: Custom format selector (overrides default smart selection)
 - `--browser, -b`: Browser to extract cookies from (firefox, chrome, safari)
 - `--verbose, -v`: Enable detailed logging output
+- `--youtube-client, -y`: YouTube client to use (web, android, tv, web_music, android_music)
+- `--enable-sabr`: Enable YouTube SABR streaming format support
+- `--no-fallback`: Disable automatic fallback to other YouTube clients
+- `--no-premium`: Disable automatic selection of Premium formats
 - `--help, -h`: Show help message with examples
 
 ### Pass-through Arguments
@@ -134,6 +155,47 @@ This will:
 - **Metadata Embedding**: Automatically embeds video metadata in downloaded files
 - **Format Selection**: Uses optimized regex-based format selector for better performance
 - **Graceful Degradation**: Continues working even if browser cookies aren't available
+- **YouTube Client Fallback**: Automatically tries alternative YouTube clients if the default fails
+
+## YouTube SABR Streaming
+
+Starting in 2025, YouTube began rolling out a new streaming protocol called SABR (Server-side Adaptive Bitrate), which has impacted tools like yt-dlp. When YouTube serves content via SABR, traditional download methods may fail or only retrieve lower quality formats.
+
+This wrapper includes features to handle SABR streaming:
+
+1. **Automatic Client Fallback**: If a download fails due to SABR restrictions, the wrapper will automatically try alternative YouTube clients (android, tv) that may still provide traditional formats.
+
+2. **Manual Client Selection**: You can manually specify which YouTube client to use with `--youtube-client`. Using `android` or `tv` often avoids SABR restrictions.
+
+3. **SABR Support**: If needed, you can enable SABR format support with `--enable-sabr`. This requires a recent version of yt-dlp that supports SABR.
+
+4. **Error Detection**: The wrapper automatically detects SABR-related errors and provides appropriate fallback solutions.
+
+If you encounter download failures with YouTube, try using:
+```sh
+python yt-dlp-wrapper.py "URL" --youtube-client android
+```
+
+Or for more recent videos where SABR is fully enforced:
+```sh
+python yt-dlp-wrapper.py "URL" --enable-sabr
+```
+
+## YouTube Premium Formats
+
+The wrapper automatically detects and prioritizes YouTube Premium formats when available. Premium formats (such as format ID 616) often provide better quality video with enhanced bitrates.
+
+Key features of the Premium format detection:
+
+1. **Automatic Detection**: The wrapper scans the available formats and automatically selects Premium formats when detected.
+
+2. **Smart Premium Quality**: When multiple Premium formats are available, automatically selects the one with the highest resolution.
+
+3. **Manual Control**: You can disable Premium format selection with `--no-premium` if you prefer to use the default format selector.
+
+4. **Best Audio Pairing**: When using Premium video formats, the wrapper automatically selects the best available audio to pair with it.
+
+This feature is particularly useful for high-quality archiving of YouTube content that includes Premium format options.
 
 ## License
 
