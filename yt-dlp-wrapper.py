@@ -33,6 +33,8 @@ YOUTUBE_CLIENTS = [
     'web',       # Web client (May use SABR streaming if enabled for your region/account)
     'android',   # Android client (Often still provides traditional formats)
     'tv',        # TV client (Often still provides traditional formats)
+    'tv_downgraded',  # TV client with downgraded version (prevents SABR on logged-in accounts)
+    'mweb',      # Mobile web client (recommended with PO Token for problematic videos)
     'web_music', # Music web client
     'android_music'  # Music android client
 ]
@@ -62,6 +64,13 @@ class VideoDownloader:
     
     def _validate_dependencies(self) -> None:
         """Validate that required dependencies are available."""
+        # Check Python version (3.10+ required as of yt-dlp 2025.10.22)
+        if sys.version_info < (3, 10):
+            raise YtDlpWrapperError(
+                f"Python 3.10+ required (you have {sys.version_info.major}.{sys.version_info.minor}). "
+                "Please upgrade Python."
+            )
+
         if not shutil.which('yt-dlp'):
             raise YtDlpWrapperError(
                 "yt-dlp not found. Install with: pip install -U yt-dlp"
@@ -80,7 +89,41 @@ class VideoDownloader:
             paths = browser_paths[self.cookies_browser]
             if not any(Path(p).expanduser().exists() for p in paths):
                 logger.warning(f"{self.cookies_browser} not found. Downloads may fail for authenticated content.")
-    
+
+    def _check_javascript_runtime(self) -> Optional[str]:
+        """Check for available JavaScript runtime for YouTube downloads."""
+        # Runtimes in priority order (only deno is enabled by default in yt-dlp)
+        runtimes = {
+            'deno': '2.0.0+',
+            'node': '20.0.0+ (25+ preferred)',
+            'bun': '1.0.31+',
+            'quickjs': '2023-12-9+'
+        }
+
+        for runtime, version in runtimes.items():
+            if shutil.which(runtime):
+                logger.debug(f"Found JavaScript runtime: {runtime}")
+                return runtime
+
+        return None
+
+    def _validate_youtube_requirements(self, url: str) -> None:
+        """Validate YouTube-specific requirements like JavaScript runtime."""
+        if self.detect_platform(url) != 'youtube':
+            return
+
+        runtime = self._check_javascript_runtime()
+        if not runtime:
+            logger.warning(
+                "⚠️  No JavaScript runtime detected. YouTube downloads may have limited format availability.\n"
+                "   As of yt-dlp 2025.11.12, a JavaScript runtime is required for full YouTube support.\n"
+                "   Install Deno (recommended): https://deno.land/\n"
+                "   - macOS: brew install deno\n"
+                "   - Linux: curl -fsSL https://deno.land/install.sh | sh\n"
+                "   - Windows: irm https://deno.land/install.ps1 | iex\n"
+                "   Alternatively: Node.js 20+, Bun, or QuickJS"
+            )
+
     def _run_command(self, cmd: str, capture_output: bool = True) -> Tuple[bool, str]:
         """Run a shell command and return success status and output."""
         try:
@@ -188,12 +231,16 @@ class VideoDownloader:
         logger.info(f"Best Premium format found: {best_premium_id} with resolution height {best_height}px")
         return f"{best_premium_id}+bestaudio/best"
 
-    def download_video(self, url: str, extra_args: Optional[List[str]] = None, 
-                      format_selector: Optional[str] = None, 
+    def download_video(self, url: str, extra_args: Optional[List[str]] = None,
+                      format_selector: Optional[str] = None,
                       youtube_client: Optional[str] = None,
                       try_sabr: bool = False,
                       try_fallback_clients: bool = False,
-                      prefer_premium: bool = True) -> bool:
+                      prefer_premium: bool = True,
+                      sponsorblock_mark: Optional[str] = None,
+                      sponsorblock_remove: Optional[str] = None,
+                      embed_chapters: bool = False,
+                      sleep_interval: Optional[int] = None) -> bool:
         """Download video using yt-dlp with optimized settings."""
         if extra_args is None:
             extra_args = []
@@ -201,7 +248,10 @@ class VideoDownloader:
         # Detect platform
         platform = self.detect_platform(url)
         logger.info(f"Detected platform: {platform.capitalize()}")
-        
+
+        # Validate YouTube requirements (JavaScript runtime)
+        self._validate_youtube_requirements(url)
+
         # Check for premium formats if YouTube and prefer_premium is enabled
         if platform == 'youtube' and prefer_premium and not format_selector:
             premium_format = self.check_premium_formats(url)
@@ -233,8 +283,26 @@ class VideoDownloader:
             '--ignore-errors',  # Continue on subtitle download errors
             '-P', str(output_dir),
             '--no-mtime',  # Don't set file modification time
-            '--embed-metadata',  # Embed metadata in video file,
+            '--embed-metadata',  # Embed metadata in video file
         ]
+
+        # Add chapter embedding (split from metadata for granular control)
+        if embed_chapters:
+            base_cmd.append('--embed-chapters')
+
+        # Add SponsorBlock options (YouTube only)
+        if platform == 'youtube':
+            if sponsorblock_mark:
+                base_cmd.extend(['--sponsorblock-mark', sponsorblock_mark])
+                logger.info(f"SponsorBlock: Marking categories: {sponsorblock_mark}")
+            if sponsorblock_remove:
+                base_cmd.extend(['--sponsorblock-remove', sponsorblock_remove])
+                logger.info(f"SponsorBlock: Removing categories: {sponsorblock_remove}")
+
+        # Add sleep interval for rate limiting
+        if sleep_interval:
+            base_cmd.extend(['--sleep-interval', str(sleep_interval)])
+            logger.info(f"Rate limiting: {sleep_interval} seconds between downloads")
         
         # Add YouTube client option if specified and it's a YouTube URL
         if platform == 'youtube':
@@ -269,15 +337,28 @@ class VideoDownloader:
             return True
         except subprocess.CalledProcessError as e:
             error_output = e.stderr if e.stderr else ""
-            
+
+            # Check for PO Token errors
+            po_token_error = False
+            if platform == 'youtube' and any(phrase in error_output for phrase in [
+                "PO Token", "po_token", "requires a GVS PO Token"]):
+                po_token_error = True
+                logger.warning(
+                    "⚠️  YouTube PO Token required.\n"
+                    "   Try using the 'mweb' client: --youtube-client mweb\n"
+                    "   Note: yt-dlp cannot generate PO Tokens automatically.\n"
+                    "   See: https://github.com/yt-dlp/yt-dlp/wiki/Extractors#po-token-guide"
+                )
+
             # Check if the error might be related to SABR streaming
             sabr_related = False
             if platform == 'youtube' and any(phrase in error_output for phrase in [
-                "web client https formats require a GVS PO Token", 
+                "web client https formats require a GVS PO Token",
                 "YouTube is forcing SABR streaming",
                 "only SABR formats"]):
                 sabr_related = True
-                logger.warning("YouTube SABR streaming issue detected")
+                if not po_token_error:  # Don't duplicate warnings
+                    logger.warning("YouTube SABR streaming issue detected")
             
             # Try fallback clients for YouTube if enabled and appropriate
             if platform == 'youtube' and try_fallback_clients and (sabr_related or not youtube_client):
@@ -295,7 +376,11 @@ class VideoDownloader:
                         format_selector=format_selector,
                         youtube_client=client,
                         try_sabr=False,  # Don't try SABR in fallback attempt
-                        try_fallback_clients=False  # Prevent infinite recursion
+                        try_fallback_clients=False,  # Prevent infinite recursion
+                        sponsorblock_mark=sponsorblock_mark,
+                        sponsorblock_remove=sponsorblock_remove,
+                        embed_chapters=embed_chapters,
+                        sleep_interval=sleep_interval
                     ):
                         return True
                 
@@ -310,7 +395,11 @@ class VideoDownloader:
                         format_selector=format_selector,
                         youtube_client=youtube_client or 'web',  # Default to web for SABR
                         try_sabr=True,  # Enable SABR formats
-                        try_fallback_clients=False  # Prevent infinite recursion
+                        try_fallback_clients=False,  # Prevent infinite recursion
+                        sponsorblock_mark=sponsorblock_mark,
+                        sponsorblock_remove=sponsorblock_remove,
+                        embed_chapters=embed_chapters,
+                        sleep_interval=sleep_interval
                     )
             
             logger.error(f"Download failed with return code {e.returncode}")
@@ -351,7 +440,15 @@ Examples:
                        help='Disable automatic fallback to other YouTube clients')
     parser.add_argument('--no-premium', action='store_true',
                        help='Disable automatic selection of Premium formats')
-    
+    parser.add_argument('--sponsorblock-mark', metavar='CATS',
+                       help='SponsorBlock categories to mark as chapters (e.g., "all", "sponsor,intro,outro")')
+    parser.add_argument('--sponsorblock-remove', metavar='CATS',
+                       help='SponsorBlock categories to remove from video (e.g., "sponsor")')
+    parser.add_argument('--embed-chapters', action='store_true',
+                       help='Embed chapter markers in video file')
+    parser.add_argument('--sleep-interval', type=int, metavar='SECONDS',
+                       help='Sleep interval between downloads (recommended: 5-10 seconds)')
+
     # Parse known and unknown args to allow passing through to yt-dlp
     args, extra_args = parser.parse_known_args()
     
@@ -361,13 +458,17 @@ Examples:
     try:
         downloader = VideoDownloader(cookies_browser=args.browser)
         success = downloader.download_video(
-            args.url, 
+            args.url,
             extra_args=extra_args,
             format_selector=args.format,
             youtube_client=args.youtube_client,
             try_sabr=args.enable_sabr,
             try_fallback_clients=not args.no_fallback,
-            prefer_premium=not args.no_premium
+            prefer_premium=not args.no_premium,
+            sponsorblock_mark=args.sponsorblock_mark,
+            sponsorblock_remove=args.sponsorblock_remove,
+            embed_chapters=args.embed_chapters,
+            sleep_interval=args.sleep_interval
         )
         
         sys.exit(0 if success else 1)

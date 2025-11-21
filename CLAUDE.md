@@ -9,15 +9,20 @@ This is a Python wrapper script for [yt-dlp](https://github.com/yt-dlp/yt-dlp) t
 ## Key Components
 
 ### Main Script: `yt-dlp-wrapper.py`
-- **VideoDownloader class**: Core functionality for downloading videos
+- **VideoDownloader class**: Core functionality for downloading videos with advanced error handling
 - **Platform detection**: Automatically detects YouTube, X/Twitter, or other platforms
 - **Smart format selection**: Prioritizes 4K→2K→1080p→720p with codec preference (av01 > vp9 > avc1)
+- **Premium format detection**: Automatically detects and uses YouTube Premium formats when available
+- **SABR streaming support**: Handles YouTube's SABR streaming with client fallback mechanisms
+- **SponsorBlock integration**: Mark or remove sponsor segments, intros, outros, and other video sections
+- **JavaScript runtime validation**: Checks for Deno/Node.js for YouTube downloads (required as of yt-dlp 2025.11.12)
 - **Cookie extraction**: Supports Firefox, Chrome, Safari browsers for authenticated downloads
-- **Error handling**: Comprehensive validation and timeout protection
+- **Comprehensive error handling**: Timeout protection, client fallbacks, PO Token detection, and graceful degradation
 - **Output organization**: Creates dated folders in `~/Downloads/YYYY.MM.DD - <Video Title>/`
 
 ### Configuration Constants
 - `DEFAULT_FORMAT_SELECTOR`: Complex format selector string prioritizing resolution and codec
+- `YOUTUBE_CLIENTS`: Available YouTube client options (web, android, tv, tv_downgraded, mweb, web_music, android_music)
 - `SUPPORTED_PLATFORMS`: Platform detection mapping for YouTube, X/Twitter
 
 ## Common Development Commands
@@ -26,12 +31,34 @@ This is a Python wrapper script for [yt-dlp](https://github.com/yt-dlp/yt-dlp) t
 ```bash
 python yt-dlp-wrapper.py "https://www.youtube.com/watch?v=VIDEO_ID"
 python yt-dlp-wrapper.py "URL" --browser chrome --format "best[height<=1080]" --verbose
+python yt-dlp-wrapper.py "URL" --youtube-client android --enable-sabr
+python yt-dlp-wrapper.py "URL" --no-premium --no-fallback
+python yt-dlp-wrapper.py "URL" --sponsorblock-mark all --embed-chapters
+python yt-dlp-wrapper.py "URL" --youtube-client mweb  # For PO Token issues
+python yt-dlp-wrapper.py "URL" --sleep-interval 5  # Rate limiting for batch downloads
 ```
 
+### Available Command Line Options
+- `--format, -f`: Custom format selector (overrides default)
+- `--browser, -b`: Browser for cookie extraction (firefox, chrome, safari)
+- `--verbose, -v`: Enable debug logging
+- `--youtube-client, -y`: Specific YouTube client (web, android, tv, tv_downgraded, mweb, web_music, android_music)
+- `--enable-sabr`: Enable YouTube SABR streaming format support
+- `--no-fallback`: Disable automatic fallback to other YouTube clients
+- `--no-premium`: Disable automatic Premium format selection
+- `--sponsorblock-mark CATS`: Mark SponsorBlock categories as chapters (e.g., "all", "sponsor,intro,outro")
+- `--sponsorblock-remove CATS`: Remove SponsorBlock categories from video (e.g., "sponsor")
+- `--embed-chapters`: Embed chapter markers in video file
+- `--sleep-interval SECONDS`: Sleep interval between downloads (recommended: 5-10 seconds for rate limiting)
+
 ### Dependencies
-- **Python 3.7+** required
+- **Python 3.10+** required (enforced as of yt-dlp 2025.10.22)
 - **yt-dlp** must be installed and in PATH: `pip install -U yt-dlp`
-- **Browser** (Firefox, Chrome, or Safari) for cookie extraction
+- **JavaScript runtime** (required for YouTube as of yt-dlp 2025.11.12):
+  - **Deno** (recommended, enabled by default): `brew install deno` (macOS) or see https://deno.land/
+  - Alternative runtimes: Node.js 20+, Bun 1.0.31+, or QuickJS 2023-12-9+
+  - Without a runtime, YouTube downloads will have severely limited format availability
+- **Browser** (Firefox, Chrome, or Safari) for cookie extraction and authenticated content
 
 ### Testing
 No formal testing framework is configured. Test manually with various video URLs from different platforms.
@@ -43,24 +70,51 @@ Uses `argparse` with `parse_known_args()` to forward unknown arguments directly 
 
 ### Error Handling Strategy
 - Custom `YtDlpWrapperError` exception for wrapper-specific errors
+- Python version validation (3.10+ required)
+- JavaScript runtime detection and warnings for YouTube downloads
 - Timeout protection: 5 minutes for metadata, 1 hour for downloads
+- YouTube client fallback system for SABR streaming issues
+- PO Token error detection with helpful guidance (suggests mweb client)
 - Graceful degradation when browser cookies unavailable
 - Proper exit codes (0 for success, 1 for failure)
 
 ### Video Processing Flow
-1. Validate dependencies (yt-dlp, browser availability)
+1. Validate dependencies (Python 3.10+, yt-dlp, browser availability)
 2. Detect platform from URL
-3. Extract video metadata with timeout protection
-4. Create organized output directory with sanitized names
-5. Download video with optimized format selector
-6. Download and convert subtitles to SRT
-7. Embed metadata in video file
+3. Validate YouTube requirements (JavaScript runtime check)
+4. Check for Premium formats (YouTube only, if enabled)
+5. Extract video metadata with timeout protection
+6. Create organized output directory with sanitized names
+7. Build download command with appropriate client settings
+8. Add SponsorBlock options (mark/remove categories) if specified
+9. Add chapter embedding if requested
+10. Add rate limiting (sleep interval) if specified
+11. Download video with optimized format selector
+12. Handle SABR streaming and PO Token errors with client fallbacks
+13. Download and convert subtitles to SRT with `--ignore-errors`
+14. Embed metadata and chapters in video file
 
 ### Format Selection Logic
-Uses regex-based format selector prioritizing:
-- Resolution: 4K (2160p) → 2K (1440p) → 1080p → 720p
-- Codec: av01 > vp9 > avc1 within each resolution
-- Fallback to best available format
+1. **Premium Detection**: Automatically detects and uses YouTube Premium formats (highest resolution available)
+2. **Default Selector**: Uses regex-based format selector prioritizing:
+   - Resolution: 4K (2160p) → 2K (1440p) → 1080p → 720p
+   - Codec: av01 > vp9 > avc1 within each resolution
+   - Fallback to best available format
+
+### YouTube SABR Streaming & PO Token Handling
+- Detects SABR streaming errors ("web client https formats require a GVS PO Token")
+- Detects PO Token errors and suggests mweb client with helpful guidance
+- Automatically tries fallback clients: android, tv, tv_downgraded, mweb, web_music, android_music
+- Can enable SABR format support with `--enable-sabr` flag
+- Prevents infinite recursion with fallback attempt limits
+- **tv_downgraded**: Used by default for logged-in accounts, prevents SABR format issues
+- **mweb**: Recommended for PO Token-related errors
+
+### SponsorBlock Integration
+- Mark sponsor segments, intros, outros, and other categories as chapters
+- Remove unwanted segments from downloaded videos
+- Available categories: sponsor, intro, outro, selfproto, preview, filler, interaction, music_offtopic, poi_highlight, chapter, all
+- YouTube-only feature (automatically enabled when specified)
 
 ## File Organization
 
@@ -75,4 +129,5 @@ Uses regex-based format selector prioritizing:
 - No unit tests - rely on manual testing with real URLs
 - Logging uses Python's standard logging module (INFO level default, DEBUG with --verbose)
 - File operations use pathlib for cross-platform compatibility
-- Browser cookie extraction paths are hardcoded for common locations
+- Browser cookie extraction validation for macOS, Linux paths
+- Recursive download methods handle client fallbacks safely
