@@ -31,7 +31,9 @@ The script uses yt-dlp's advanced format selector with the following priority:
 ## Requirements
 
 - Python 3.10+ (enforced as of yt-dlp 2025.10.22)
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) CLI tool installed and in PATH
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) **2025.11.12 or later** (recommended for full YouTube support)
+  - Earlier versions may work but will have limited YouTube format availability
+  - Install/update with: `pip install -U yt-dlp`
 - JavaScript runtime (required for YouTube as of yt-dlp 2025.11.12):
   - **Deno** (recommended): `brew install deno` (macOS) or see https://deno.land/
   - Alternative runtimes: Node.js 20+, Bun 1.0.31+, or QuickJS 2023-12-9+
@@ -41,7 +43,7 @@ The script uses yt-dlp's advanced format selector with the following priority:
 ## Installation
 
 1. Clone this repository or copy `yt-dlp-wrapper.py` to your local machine.
-2. Install yt-dlp CLI tool:
+2. Install yt-dlp CLI tool (version 2025.11.12 or later):
     ```sh
     # Using pip (recommended)
     pip install -U yt-dlp
@@ -49,7 +51,7 @@ The script uses yt-dlp's advanced format selector with the following priority:
     # Or using pipx (isolated installation)
     pipx install yt-dlp
 
-    # Verify installation
+    # Verify installation (should show 2025.11.12 or later)
     yt-dlp --version
     ```
 3. Install a JavaScript runtime (required for YouTube):
@@ -237,7 +239,7 @@ This wrapper includes features to handle SABR streaming and PO Token errors:
 
 3. **PO Token Error Detection**: The wrapper automatically detects PO Token errors and suggests using the `mweb` client with helpful guidance.
 
-4. **SABR Format Support**: If needed, you can enable SABR format support with `--enable-sabr`. This requires a recent version of yt-dlp that supports SABR.
+4. **SABR Format Support**: If needed, you can enable SABR format support with `--enable-sabr`. This requires yt-dlp 2025.11.12 or later with SABR streaming support.
 
 5. **Error Detection**: The wrapper automatically detects SABR-related errors and provides appropriate fallback solutions.
 
